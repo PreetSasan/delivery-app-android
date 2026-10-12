@@ -1,0 +1,81 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 36
+          target: default
+          arch: x86_64
+
+      - name: Grant execute permission to gradlew
+        run: chmod +x gradlew
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Build release APK (unsigned)
+        run: ./gradlew assembleRelease --stacktrace
+
+      - name: Upload debug APK to artifacts
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: app-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+
+      - name: Upload release APK to artifacts
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: app-release-unsigned
+          path: app/build/outputs/apk/release/app-release-unsigned.apk
+          retention-days: 30
+
+      - name: Create Release (on version tags)
+        if: startsWith(github.ref, 'refs/tags/v') && success()
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/release/app-release-unsigned.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build report
+        if: always()
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f "app/build/outputs/apk/debug/app-debug.apk" ]; then
+            echo "✅ Debug APK: app-debug.apk" >> $GITHUB_STEP_SUMMARY
+            ls -lh app/build/outputs/apk/debug/app-debug.apk >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ -f "app/build/outputs/apk/release/app-release-unsigned.apk" ]; then
+            echo "✅ Release APK: app-release-unsigned.apk" >> $GITHUB_STEP_SUMMARY
+            ls -lh app/build/outputs/apk/release/app-release-unsigned.apk >> $GITHUB_STEP_SUMMARY
+          fi
